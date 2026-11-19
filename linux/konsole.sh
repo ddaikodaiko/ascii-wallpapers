@@ -99,17 +99,22 @@ PY
     img="$WALLS/$key.webp"
     [ -f "$img" ] || die "$img is not rendered yet"
     base=$(base_scheme)
-    name="$PREFIX$label"
+    # Konsole keeps a scheme it has loaded by its name for its whole life: a new render gets a new name, so it is read
+    tag=$(printf '%x' "$(stat -c %Y "$img")" | tail -c 5)
+    name="$PREFIX$label ($tag)"
     out="$KDIR/$name.colorscheme"
     mkdir -p "$KDIR"
+    for old in "$KDIR/$PREFIX$label"*.colorscheme; do [ -e "$old" ] && [ "$old" != "$out" ] && rm -f "$old"; done
     src=$(scheme_file "$base" || true)
     {
       # the base scheme's [General] minus what the wallpaper sets, then ours, then its colours as they are
       printf '[General]\nDescription=%s\n' "$name"
       if [ -n "$src" ]; then
-        awk '/^\[General\]/{g=1;next} /^\[/{g=0} g && !/^(Description|Wallpaper|WallpaperOpacity|WallpaperFlipType|FillStyle|Anchor)=/ && NF' "$src"
+        awk '/^\[General\]/{g=1;next} /^\[/{g=0} g && !/^(Description|Opacity|Blur|Wallpaper|WallpaperOpacity|WallpaperFlipType|FillStyle|Anchor)=/ && NF' "$src"
       fi
-      printf 'Wallpaper=%s\nFillStyle=Crop\nAnchor=0.5,0.5\nWallpaperOpacity=1\nWallpaperFlipType=NoFlip\n\n' "$img"
+      # opaque, no blur behind: a translucent window over a moving wallpaper makes the compositor re-blur it every frame,
+      # and washes the scene out
+      printf 'Opacity=1\nBlur=false\nWallpaper=%s\nFillStyle=Crop\nAnchor=0.5,0.5\nWallpaperOpacity=1\nWallpaperFlipType=NoFlip\n\n' "$img"
       if [ -n "$src" ]; then
         awk '/^\[General\]/{g=1;next} /^\[/{g=0} !g' "$src"
       fi

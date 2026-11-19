@@ -51,12 +51,16 @@ terminal session:
    - **At the terminal's own pixel size** (read from the pty), so Konsole draws each frame as it is instead of
      rescaling it on every repaint: sharper, and far less CPU.
    - **On the scenes' shimmer clock**: every scene's glyphs flicker through a 0.43 s cycle of three steps. Frames are
-     taken mid-step, two per step (about 14 fps), and a loop is 24 whole cycles (10.3 s), so the flicker is even and
-     closes on itself. A 1.5 s crossfade hides the seam of the slower motions.
-   - A dark veil keeps the text readable. About 30 s per scene with a GPU (minutes in software), a few MB each.
+     taken mid-step, one per step (7 fps), and a loop is 24 whole cycles (10.3 s), so the flicker is even and closes
+     on itself. A 1.5 s crossfade hides the seam of the slower motions.
+   - Packed by `img2webp` as full opaque keyframes: ImageMagick's packing leaves alpha deltas, which Konsole decodes
+     and blends on every frame.
+   - A dark veil keeps the text readable. Under a minute per scene with a GPU (minutes in software), about 3 MB each.
    The picker says so and turns the wallpaper on by itself when it is ready.
-2. `linux/konsole.sh` copies the tab's own colour scheme (from its profile, so your colours, opacity and blur stay)
-   into `~/.local/share/konsole/ASCII Wallpaper - <name>.colorscheme` with the scene as its wallpaper, and switches
+2. `linux/konsole.sh` copies the tab's own colour scheme (from its profile, so your colours stay) into
+   `~/.local/share/konsole/ASCII Wallpaper - <name> (<build>).colorscheme` with the scene as its wallpaper, opaque
+   and with no blur behind (a translucent window over a moving wallpaper is re-blurred by the compositor every frame),
+   and switches
    the tab to it with the OSC 50 sequence `konsoleprofile` uses. Konsole's D-Bus `setProfile` is off by default as
    security-sensitive; this needs no setting changed.
 3. `/wallpaper off`, or the end of the Claude Code session, puts the tab back on its own scheme. Your pick is kept,
@@ -65,15 +69,18 @@ terminal session:
 In the terminal, `/wallpaper` opens a picker above the prompt: press 1–8 in the empty prompt (0 for off), and Clawd
 sits beside it in half blocks, stepping with each pick.
 
-Needs: Konsole ≥ 23.08, [Bun](https://bun.sh), Chromium or Chrome (`AW_CHROME=/path` to choose one) and ImageMagick.
-On Fedora: `sudo dnf install chromium ImageMagick`.
+What it costs, measured on Konsole 25.12 with a 1883×1004 terminal: Konsole's own CPU goes from 1% to about 20% of
+one core at 7 fps (33% at 14 fps); the compositor stays at 1%.
+
+Needs: Konsole ≥ 23.08, [Bun](https://bun.sh), Chromium or Chrome (`AW_CHROME=/path` to choose one), ImageMagick and
+libwebp's `img2webp` (optional, recommended). On Fedora: `sudo dnf install chromium ImageMagick libwebp-tools`.
 
 To render all eight ahead of time (from a clone of this repo):
 
 ```bash
 bun linux/render.ts ~/.local/share/ascii-wallpapers            # all eight
 bun linux/render.ts ~/.local/share/ascii-wallpapers honu --width $(bash linux/konsole.sh size | cut -dx -f1) --height $(bash linux/konsole.sh size | cut -dx -f2)
-bun linux/render.ts ~/.local/share/ascii-wallpapers moonlit --steps 1   # 7 fps: half the CPU, still on the shimmer clock
+bun linux/render.ts ~/.local/share/ascii-wallpapers moonlit --steps 2   # 14 fps: smoother, ~1.6x Konsole's CPU
 AW_GPU=0 bun linux/render.ts ~/.local/share/ascii-wallpapers            # software only
 ```
 

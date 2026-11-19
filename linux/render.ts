@@ -6,7 +6,8 @@
 //
 // Render at the terminal's own pixel size (konsole.sh size): Konsole then draws each frame as it is, with no scaling.
 // Every scene's glyphs shimmer on one clock, a 0.43 s cycle of three steps; frames are sampled mid-step, `steps` per
-// step (2: about 14 fps), and a loop is a whole number of cycles, so the shimmer stays even and closes on itself. The
+// step (1: 7 fps, each step once; 2: 14 fps, smoother motion at about 1.6x Konsole's CPU), and a loop is a whole number
+// of cycles, so the shimmer stays even and closes on itself. The
 // scenes' other motions have unrelated periods, so the last `fade` seconds of each loop are blended into its first ones.
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -27,7 +28,7 @@ const opt = (name: string, dflt: number) => {
   if (!Number.isFinite(v) || v <= 0) throw new Error(`--${name} needs a positive number`)
   return v
 }
-const W = Math.round(opt('width', 1920)), H = Math.round(opt('height', 1080)), STEPS = Math.round(opt('steps', 2)), CYCLES = Math.round(opt('cycles', 24)), FADE = opt('fade', 1.5)
+const W = Math.round(opt('width', 1920)), H = Math.round(opt('height', 1080)), STEPS = Math.round(opt('steps', 1)), CYCLES = Math.round(opt('cycles', 24)), FADE = opt('fade', 1.5)
 const SHIMMER = 0.43 // the scenes' shared glyph shimmer: one cycle, three discrete steps
 const DT = SHIMMER / 3 / STEPS // seconds per frame
 const SECONDS = CYCLES * SHIMMER
@@ -50,6 +51,9 @@ function which(names: string[]): string | null {
 }
 const CHROME = process.env.AW_CHROME ?? which(['chromium-browser', 'chromium', 'google-chrome-stable', 'google-chrome', 'brave-browser'])
 const MAGICK = which(['magick', 'convert'])
+// libwebp's own packer: every frame a full, opaque keyframe. ImageMagick's packing leaves most frames as deltas with an
+// alpha plane, which Konsole decodes and blends on every frame, for more CPU
+const IMG2WEBP = which(['img2webp'])
 if (!CHROME) throw new Error('needs Chromium or Chrome on PATH (or AW_CHROME=/path/to/chrome)')
 if (!MAGICK) throw new Error('needs ImageMagick (magick) on PATH')
 
@@ -153,6 +157,8 @@ async function shoot(cdp: Cdp, t: number, path: string) {
   await writeFile(path, Buffer.from(shot.data, 'base64'))
 }
 
+// packing a scene is one ImageMagick thread for a while: it runs on while the next scene renders
+const packing: Promise<void>[] = []
 try {
   for (const key of keys) {
     const t0 = Date.now()
@@ -188,12 +194,20 @@ try {
       return run([MAGICK!, t, f, '-compose', 'blend', '-define', `compose:args=${w}`, '-composite', f])
     }))
     const tmp = join(OUT, `.${key}.webp.part`)
-    // DT as ImageMagick ticks: 0.43 / 3 / STEPS s = 43 / (300 * STEPS) s
-    await run([MAGICK!, '-delay', `43x${300 * STEPS}`, '-loop', '0', join(dir, 'f*.png'), '-quality', '90', '-define', 'webp:method=4', `webp:${tmp}`])
-    await rename(tmp, join(OUT, `${key}.webp`))
-    await rm(dir, { recursive: true, force: true })
-    console.log(`${process.stdout.isTTY ? '\r' : ''}${key}: ${frames} frames ${W}x${H} in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${join(OUT, `${key}.webp`)}`)
+    packing.push((async () => {
+      const names = Array.from({ length: frames }, (_, i) => join(dir, `f${pad(i)}.png`))
+      if (IMG2WEBP) {
+        await run([IMG2WEBP, '-loop', '0', '-kmax', '1', '-lossy', '-q', '85', '-m', '4', '-d', String(Math.round(DT * 1000)), ...names, '-o', tmp])
+      } else {
+        // DT as ImageMagick ticks: 0.43 / 3 / STEPS s = 43 / (300 * STEPS) s
+        await run([MAGICK!, '-delay', `43x${300 * STEPS}`, '-loop', '0', ...names, '-alpha', 'off', '-quality', '85', '-define', 'webp:method=4', `webp:${tmp}`])
+      }
+      await rename(tmp, join(OUT, `${key}.webp`))
+      await rm(dir, { recursive: true, force: true })
+      console.log(`${process.stdout.isTTY ? '\r' : ''}${key}: ${frames} frames ${W}x${H} in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${join(OUT, `${key}.webp`)}`)
+    })())
   }
+  await Promise.all(packing)
 } finally {
   for (const b of browsers) { b.cdp.close(); b.proc.kill() }
   await Promise.race([Promise.all(browsers.map(b => b.proc.exited)), Bun.sleep(3000)])
