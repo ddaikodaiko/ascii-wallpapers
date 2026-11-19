@@ -17,7 +17,7 @@ function engine(on: On, rendered: boolean) {
   on('process.run', (_, e) => {
     runs.push([...e.argv])
     const sub = e.argv[2]
-    const out = sub === 'check' ? 'konsole 251203' : sub === 'dir' ? '/walls' : ''
+    const out = sub === 'check' ? 'konsole 251203' : sub === 'dir' ? '/walls' : sub === 'size' ? '1883x1004' : ''
     const exitCode = sub === 'has' && !rendered ? 1 : 0
     return { value: { exitCode, stdout: out, stderr: '' } } as never
   })
@@ -40,7 +40,7 @@ test('a scene not yet rendered is rendered first', async ($, on) => {
   expect(JSON.stringify(await $.command.run({ command: 'wallpaper', args: 'moonlit' } as never))).toContain('Rendering Moonlit')
   // the render runs on after the command answers
   for (let i = 0; i < 200 && !runs.some(r => r[0] === 'bun'); i++) await Promise.resolve()
-  expect(runs.some(r => r[0] === 'bun' && r[1] === '/plugin/linux/render.ts' && r[2] === '/walls' && r[3] === 'moonlit')).toBe(true)
+  expect(runs.find(r => r[0] === 'bun')?.join(' ')).toBe('bun /plugin/linux/render.ts /walls moonlit --width 1883 --height 1004')
 })
 
 test('the terminal picker lists the eight wallpapers as buttons, with Clawd beside it', async ($, on) => {

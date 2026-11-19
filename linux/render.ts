@@ -2,10 +2,12 @@
 // wallpaper behind Claude Code. Headless Chromium draws each frame with the SMIL clock paused and seeked, so every frame is
 // exact; ImageMagick packs them. No npm dependencies: Chromium is driven over the DevTools protocol directly.
 //
-//   bun linux/render.ts <outDir> [scene ...] [--width 1600] [--height 900] [--fps 8] [--seconds 10] [--fade 1.5] [--workers N]
+//   bun linux/render.ts <outDir> [scene ...] [--width 1920] [--height 1080] [--steps 2] [--cycles 24] [--fade 1.5] [--workers N]
 //
-// The scenes' motions have unrelated periods, so no loop length closes them all. The last `fade` seconds of each loop
-// are blended into its first ones, which hides the seam.
+// Render at the terminal's own pixel size (konsole.sh size): Konsole then draws each frame as it is, with no scaling.
+// Every scene's glyphs shimmer on one clock, a 0.43 s cycle of three steps; frames are sampled mid-step, `steps` per
+// step (2: about 14 fps), and a loop is a whole number of cycles, so the shimmer stays even and closes on itself. The
+// scenes' other motions have unrelated periods, so the last `fade` seconds of each loop are blended into its first ones.
 import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -25,11 +27,14 @@ const opt = (name: string, dflt: number) => {
   if (!Number.isFinite(v) || v <= 0) throw new Error(`--${name} needs a positive number`)
   return v
 }
-const W = opt('width', 1600), H = opt('height', 900), FPS = opt('fps', 8), SECONDS = opt('seconds', 10), FADE = opt('fade', 1.5)
+const W = Math.round(opt('width', 1920)), H = Math.round(opt('height', 1080)), STEPS = Math.round(opt('steps', 2)), CYCLES = Math.round(opt('cycles', 24)), FADE = opt('fade', 1.5)
+const SHIMMER = 0.43 // the scenes' shared glyph shimmer: one cycle, three discrete steps
+const DT = SHIMMER / 3 / STEPS // seconds per frame
+const SECONDS = CYCLES * SHIMMER
 const WORKERS = Math.min(16, Math.round(opt('workers', Math.max(1, navigator.hardwareConcurrency - 2))))
 const [outArg, ...wanted] = args
 if (!outArg) {
-  console.error('usage: bun linux/render.ts <outDir> [scene ...] [--width W] [--height H] [--fps N] [--seconds S] [--fade S]')
+  console.error('usage: bun linux/render.ts <outDir> [scene ...] [--width W] [--height H] [--steps N] [--cycles N] [--fade S] [--workers N]')
   process.exit(2)
 }
 const OUT = resolve(outArg)
@@ -76,9 +81,13 @@ class Cdp {
   close() { this.ws.close() }
 }
 
+// the GPU rasterizes the glyph masks and filters about ten times faster than Chromium's software path; without a usable
+// GPU Chromium falls back to software by itself. AW_GPU=0 forces software.
+const GPU = process.env.AW_GPU === '0' ? ['--disable-gpu'] : ['--enable-gpu', '--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist', '--enable-gpu-rasterization']
+
 async function launch(profile: string) {
   const proc = Bun.spawn([CHROME!, '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
-    '--no-default-browser-check', `--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio', 'about:blank'], { stdout: 'ignore', stderr: 'pipe' })
+    '--no-default-browser-check', `--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio', ...GPU, ...(process.env.AW_CHROME_FLAGS?.split(' ').filter(Boolean) ?? []), 'about:blank'], { stdout: 'ignore', stderr: 'pipe' })
   const reader = proc.stderr.getReader()
   let buf = ''
   const deadline = Date.now() + 20_000
@@ -156,12 +165,12 @@ try {
     const dir = join(work, key)
     await mkdir(dir)
 
-    // a start well into the scene, so every part that fades in on load is already on
-    const START = 30
-    const frames = Math.round(SECONDS * FPS), fadeFrames = Math.min(frames, Math.round(FADE * FPS))
+    // a start well into the scene, so every part that fades in on load is already on, on a shimmer cycle's start
+    const START = 70 * SHIMMER
+    const frames = CYCLES * 3 * STEPS, fadeFrames = Math.min(frames, Math.round(FADE / DT))
     const jobs: { t: number; path: string }[] = []
-    for (let i = 0; i < frames; i++) jobs.push({ t: START + i / FPS, path: join(dir, `f${pad(i)}.png`) })
-    for (let i = 0; i < fadeFrames; i++) jobs.push({ t: START + SECONDS + i / FPS, path: join(dir, `t${pad(i)}.png`) })
+    for (let i = 0; i < frames; i++) jobs.push({ t: START + DT / 2 + i * DT, path: join(dir, `f${pad(i)}.png`) })
+    for (let i = 0; i < fadeFrames; i++) jobs.push({ t: START + SECONDS + DT / 2 + i * DT, path: join(dir, `t${pad(i)}.png`) })
     let next = 0, done = 0
     await Promise.all(browsers.map(async ({ cdp }) => {
       await load(cdp, file)
@@ -179,10 +188,11 @@ try {
       return run([MAGICK!, t, f, '-compose', 'blend', '-define', `compose:args=${w}`, '-composite', f])
     }))
     const tmp = join(OUT, `.${key}.webp.part`)
-    await run([MAGICK!, '-delay', String(Math.round(100 / FPS)), '-loop', '0', join(dir, 'f*.png'), '-quality', '80', '-define', 'webp:method=4', `webp:${tmp}`])
+    // DT as ImageMagick ticks: 0.43 / 3 / STEPS s = 43 / (300 * STEPS) s
+    await run([MAGICK!, '-delay', `43x${300 * STEPS}`, '-loop', '0', join(dir, 'f*.png'), '-quality', '90', '-define', 'webp:method=4', `webp:${tmp}`])
     await rename(tmp, join(OUT, `${key}.webp`))
     await rm(dir, { recursive: true, force: true })
-    console.log(`${process.stdout.isTTY ? '\r' : ''}${key}: ${frames} frames in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${join(OUT, `${key}.webp`)}`)
+    console.log(`${process.stdout.isTTY ? '\r' : ''}${key}: ${frames} frames ${W}x${H} in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${join(OUT, `${key}.webp`)}`)
   }
 } finally {
   for (const b of browsers) { b.cdp.close(); b.proc.kill() }

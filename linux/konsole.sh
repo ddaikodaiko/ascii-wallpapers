@@ -6,6 +6,7 @@
 #
 #   konsole.sh check            exit 0 when this is a Konsole tab whose terminal can be reached
 #   konsole.sh dir              print the folder the rendered scenes live in
+#   konsole.sh size             print the terminal's size in pixels (WxH), to render at it and spare Konsole a scaling
 #   konsole.sh has <key>        exit 0 when <key>.webp is rendered
 #   konsole.sh on <key> <label> show <key> behind the tab
 #   konsole.sh off              back to the tab's own colour scheme
@@ -79,6 +80,17 @@ case "${1:-}" in
   dir)
     echo "$WALLS"
     ;;
+  size)
+    tty=$(find_tty) || die "no terminal to reach"
+    python3 -I - "$tty" <<'PY' || die "the terminal reports no pixel size"
+import fcntl, os, struct, sys, termios
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOCTTY)
+_, _, w, h = struct.unpack('HHHH', fcntl.ioctl(fd, termios.TIOCGWINSZ, bytes(8)))
+if not w or not h:
+    sys.exit(1)
+print(f'{w}x{h}')
+PY
+    ;;
   has)
     [ -f "$WALLS/${2:?key}.webp" ]
     ;;
@@ -112,6 +124,6 @@ case "${1:-}" in
     echo "off: $base"
     ;;
   *)
-    die "usage: konsole.sh check | dir | has <key> | on <key> <label> | off"
+    die "usage: konsole.sh check | dir | size | has <key> | on <key> <label> | off"
     ;;
 esac

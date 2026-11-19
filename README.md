@@ -47,9 +47,14 @@ Claude Code's terminal UI draws no plugin backdrops, so on Linux this fork puts 
 terminal session:
 
 1. The scene is rendered once to `~/.local/share/ascii-wallpapers/<scene>.webp` (`linux/render.ts`): headless
-   Chromium draws every frame with the SVG clock paused and seeked, ImageMagick packs them into a 10 s loop at 8 fps,
-   1600×900, with a 1.5 s crossfade over the seam and a dark veil so the text stays readable. About 3 minutes per scene
-   on 12 cores, and 1–2 MB each. The picker says so and turns the wallpaper on by itself when it is ready.
+   Chromium (on the GPU) draws every frame with the SVG clock paused and seeked, and ImageMagick packs them.
+   - **At the terminal's own pixel size** (read from the pty), so Konsole draws each frame as it is instead of
+     rescaling it on every repaint: sharper, and far less CPU.
+   - **On the scenes' shimmer clock**: every scene's glyphs flicker through a 0.43 s cycle of three steps. Frames are
+     taken mid-step, two per step (about 14 fps), and a loop is 24 whole cycles (10.3 s), so the flicker is even and
+     closes on itself. A 1.5 s crossfade hides the seam of the slower motions.
+   - A dark veil keeps the text readable. About 30 s per scene with a GPU (minutes in software), a few MB each.
+   The picker says so and turns the wallpaper on by itself when it is ready.
 2. `linux/konsole.sh` copies the tab's own colour scheme (from its profile, so your colours, opacity and blur stay)
    into `~/.local/share/konsole/ASCII Wallpaper - <name>.colorscheme` with the scene as its wallpaper, and switches
    the tab to it with the OSC 50 sequence `konsoleprofile` uses. Konsole's D-Bus `setProfile` is off by default as
@@ -67,7 +72,9 @@ To render all eight ahead of time (from a clone of this repo):
 
 ```bash
 bun linux/render.ts ~/.local/share/ascii-wallpapers            # all eight
-bun linux/render.ts ~/.local/share/ascii-wallpapers honu moonlit --fps 12 --seconds 12 --width 1920 --height 1080
+bun linux/render.ts ~/.local/share/ascii-wallpapers honu --width $(bash linux/konsole.sh size | cut -dx -f1) --height $(bash linux/konsole.sh size | cut -dx -f2)
+bun linux/render.ts ~/.local/share/ascii-wallpapers moonlit --steps 1   # 7 fps: half the CPU, still on the shimmer clock
+AW_GPU=0 bun linux/render.ts ~/.local/share/ascii-wallpapers            # software only
 ```
 
 Other terminals (kitty, GNOME Terminal, Ptyxis, Alacritty…) can't play an animated wallpaper; the picker says so and

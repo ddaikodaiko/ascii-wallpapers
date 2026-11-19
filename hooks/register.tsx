@@ -88,7 +88,10 @@ async function terminalOn($: EngineInterface, w: Wall): Promise<string> {
       void (async () => {
         try {
           const dir = (await helper($, ['dir'])).out
-          const ran = await $.process.run(['bun', `${has.root}/linux/render.ts`, dir, w.key], { timeoutMs: 600_000 })
+          // at the terminal's own pixel size, so Konsole draws each frame unscaled
+          const size = (await helper($, ['size'])).out.match(/^(\d+)x(\d+)$/)
+          const dims = size ? ['--width', size[1] ?? '1920', '--height', size[2] ?? '1080'] : []
+          const ran = await $.process.run(['bun', `${has.root}/linux/render.ts`, dir, w.key, ...dims], { timeoutMs: 600_000 })
           if (ran.exitCode !== 0) {
             $.ui.toast(`${w.name} could not be rendered: ${ran.stderr.trim().split('\n').pop() ?? 'unknown error'}`)
             return
