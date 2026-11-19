@@ -56,3 +56,27 @@ test('the terminal picker lists the eight wallpapers as buttons, with Clawd besi
   expect((await ui.find({ type: 'Text', text: /nothing like this/ })) === undefined).toBe(true)
   await ui.unmount()
 })
+
+test('with the picker open, a prompt that is one digit picks, and never reaches the model', async ($, on) => {
+  const runs = engine(on, true)
+  const reached: string[] = []
+  on('prompt.submit', (_, e) => { reached.push(e.text); return { text: e.text } })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(JSON.stringify(await $.command.run({ command: 'wallpaper', args: '' } as never))).toContain('2 Cloud Drift')
+
+  expect(JSON.stringify(await $.prompt.submit({ text: '2' } as never))).toContain('Cloud Drift is on.')
+  expect(runs.some(r => r.join(' ') === 'bash /plugin/linux/konsole.sh on clouds Cloud Drift')).toBe(true)
+  expect(JSON.stringify(await $.prompt.submit({ text: ' 0 ' } as never))).toContain('Wallpaper off.')
+  expect(reached.length).toBe(0)
+
+  // a longer prompt, or any once the picker is closed, goes on as typed
+  await $.prompt.submit({ text: '2 tests fail' } as never)
+  expect(reached).toEqual(['2 tests fail'])
+})
+
+test('/wallpaper takes the picker numbers too', async ($, on) => {
+  const runs = engine(on, true)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(JSON.stringify(await $.command.run({ command: 'wallpaper', args: '4' } as never))).toContain('Koi Pond is on.')
+  expect(runs.some(r => r.join(' ') === 'bash /plugin/linux/konsole.sh on koiPond Koi Pond')).toBe(true)
+})

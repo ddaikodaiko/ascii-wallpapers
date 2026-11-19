@@ -17,8 +17,12 @@ import { join, resolve } from 'node:path'
 import { SCENES } from '../hooks/scenes.js'
 
 type Key = keyof typeof SCENES
-const DARK_VEIL = 0.42 // the film's dark glass is 55% over panels; the terminal's text sits on the scene itself, so a lighter veil
-const LIGHT_VEIL = 0.7 // Cloud Drift is a light scene: a stronger veil keeps a dark terminal theme readable over it
+// The veil over each scene, from its measured light: text sits on the scene itself, so the 90th percentile of a frame's
+// relative luminance is kept near 0.1 or under (white text then keeps 6:1 over nine tenths of the screen). Most scenes are
+// dark already and take the film's lighter glass; the lagoon, the pond and the lake are lit water and take more; Cloud
+// Drift is a light scene and takes the most.
+const VEIL: Partial<Record<Key, number>> = { honu: 0.55, koiPond: 0.52, paperBoats: 0.52, clouds: 0.7 }
+const DARK_VEIL = 0.42
 
 const args = process.argv.slice(2)
 const opt = (name: string, dflt: number) => {
@@ -114,8 +118,6 @@ async function launch(profile: string) {
   throw new Error(`Chromium did not start:\n${buf.slice(-2000)}`)
 }
 
-const TONE: Record<Key, 'dark' | 'light'> = { clawd: 'dark', clouds: 'light', honu: 'dark', koiPond: 'dark', jellyfish: 'dark', paperBoats: 'dark', fireflies: 'dark', moonlit: 'dark' }
-
 async function run(cmd: string[]) {
   const p = Bun.spawn(cmd, { stdout: 'ignore', stderr: 'pipe' })
   const err = await new Response(p.stderr).text()
@@ -163,7 +165,7 @@ const packing: Promise<void>[] = []
 try {
   for (const key of keys) {
     const t0 = Date.now()
-    const veil = TONE[key] === 'light' ? LIGHT_VEIL : DARK_VEIL
+    const veil = VEIL[key] ?? DARK_VEIL
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0c0c0c}`
       + `#s{position:fixed;inset:0}#s>svg{display:block;width:100%;height:100%}#v{position:fixed;inset:0;background:rgba(12,12,12,${veil})}</style></head>`
       + `<body><div id="s">${SCENES[key]}</div><div id="v"></div></body></html>`

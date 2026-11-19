@@ -35,7 +35,7 @@ Then start a new session in the Code tab of Claude Desktop.
 ## Use
 
 - `/wallpaper` opens the picker above the prompt. Click a wallpaper (or focus the picker and press 1–8, 0 for off). Clawd the crab sits on it and hops when you pick one.
-- `/wallpaper honu` (or any name), `/wallpaper off`.
+- `/wallpaper honu` (or any name, or its number: `/wallpaper 3`), `/wallpaper off`.
 - `/wallpaper crab off` sends Clawd to rest; `/wallpaper crab on` brings him back.
 - Your pick is kept for the next session.
 
@@ -57,19 +57,28 @@ terminal session:
      on itself. A 1.5 s crossfade hides the seam of the slower motions.
    - Packed by `img2webp` as full opaque keyframes: ImageMagick's packing leaves alpha deltas, which Konsole decodes
      and blends on every frame.
-   - A dark veil keeps the text readable. Under a minute per scene with a GPU (minutes in software), about 5 MB each.
+   - A dark veil keeps the text readable, set per scene from its measured light: the brightest tenth of a frame stays
+     near relative luminance 0.1 (the lit water of Honu Lagoon, Koi Pond and Paper Boats takes more veil than the
+     night scenes). Under a minute per scene with a GPU (minutes in software), about 5 MB each.
    The picker says so and turns the wallpaper on by itself when it is ready.
 2. `linux/konsole.sh` copies the tab's own colour scheme (from its profile, so your colours stay) into
    `~/.local/share/konsole/ASCII Wallpaper - <name> (<build>).colorscheme` with the scene as its wallpaper, opaque
    and with no blur behind (a translucent window over a moving wallpaper is re-blurred by the compositor every frame),
-   and switches
-   the tab to it with the OSC 50 sequence `konsoleprofile` uses. Konsole's D-Bus `setProfile` is off by default as
+   and switches the tab to it with the OSC 50 sequence `konsoleprofile` uses. Konsole's D-Bus `setProfile` is off by default as
    security-sensitive; this needs no setting changed.
+   The scheme takes **the scene's own palette** (`linux/palette.ts`), so the chat stays readable over it. Claude
+   Code's ANSI themes (`dark-ansi`, `light-ansi`) draw in the terminal's 16 colours, and a palette made for a flat
+   background often has dark "bright" colours that vanish over a scene. Each colour is solved to a luminance for what
+   Claude Code draws with it: text near white, inactive text and the prompt box at 0.55, Claude/permission/success
+   colours at 0.4 or more, dim text never under 0.3, and the strips behind your messages, bash output and diff lines
+   dark enough for white text at 6:1 to 11:1. The scene's accent tints the greys and the strips. `AW_PALETTE=base`
+   keeps your own scheme's colours instead; the palette only reaches Claude Code under an ANSI theme (`/config`).
 3. `/wallpaper off`, or the end of the Claude Code session, puts the tab back on its own scheme. Your pick is kept,
    so the next session starts with it.
 
 In the terminal, `/wallpaper` opens a picker above the prompt: press 1–8 in the empty prompt (0 for off), and Clawd
-sits beside it in half blocks, stepping with each pick.
+sits beside it in half blocks, stepping with each pick. While it is open, a prompt that is just that digit (typed and
+sent with Enter) picks too, and never reaches the model.
 
 What it costs, measured on Konsole 25.12 (1920×1080 screen, 1883×1004 terminal, idle machine): Konsole's own CPU
 goes from 1% to about 10% of one core at 7 fps; the compositor stays at 1%. 14 fps (`--steps 2`) costs about 1.6x.

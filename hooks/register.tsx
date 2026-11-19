@@ -144,6 +144,10 @@ async function apply($: EngineInterface, key: string | null, hop = true) {
   }
 }
 
+// the picker's numbers: 1-8 in the film's order, 0 for off
+const DIGIT = /^[0-8]$/
+const byDigit = (d: string) => (d === '0' ? null : (WALLS[Number(d) - 1]?.key ?? null))
+
 // Clawd in the terminal: the same 16-cell crab, two cell rows to a line in half blocks, legs stepping with each pick
 function crabLines(hop: number): string[] {
   const rows: string[] = [...BODY, LEGS[hop % 2] ?? LEGS[0], '................']
@@ -169,8 +173,10 @@ export const register: Register = on => {
     const arg = e.args.trim().toLowerCase().replace(/\s+/g, ' ')
     if (!arg) {
       await update($, picking, () => true)
-      return { text: 'Pick a wallpaper above the prompt.' }
+      // the numbers in the reply too: they answer as a prompt of their own (below) even where the band does not draw
+      return { text: `Pick a wallpaper above the prompt, or send its number: ${WALLS.map((w, i) => `${i + 1} ${w.name}`).join(' · ')} · 0 off.` }
     }
+    if (DIGIT.test(arg)) return { text: await apply($, byDigit(arg)) }
     if (arg === 'crab on' || arg === 'crab off') {
       await update($, crab, () => arg === 'crab on')
       await $.store.set('crab', arg === 'crab on')
@@ -180,6 +186,14 @@ export const register: Register = on => {
     const w = WALLS.find(x => x.key.toLowerCase() === arg || x.name.toLowerCase() === arg || x.name.toLowerCase().replace(/\s/g, '') === arg.replace(/\s/g, ''))
     if (!w) return { text: `No wallpaper "${arg}". One of: ${WALLS.map(x => x.name).join(', ')}, or off.` }
     return { text: await apply($, w.key) }
+  })
+
+  // While the picker is open, a prompt that is one digit picks: the band's hotkeys take a bare digit only while they are
+  // armed, and one that missed them would otherwise reach the model as a message
+  on('prompt.submit', async ($, e, next) => {
+    const text = e.text.trim()
+    if (e.command || e.isMeta || !DIGIT.test(text) || !(await read($, picking))) return next(e)
+    return { drop: await apply($, byDigit(text)) }
   })
 
   // the terminal goes back to its own look when the session ends; the pick is kept for the next one

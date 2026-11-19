@@ -11,6 +11,9 @@
 #   konsole.sh has <key>        exit 0 when <key>.webp is rendered
 #   konsole.sh on <key> <label> show <key> behind the tab
 #   konsole.sh off              back to the tab's own colour scheme
+#
+# The scheme behind a scene takes that scene's own palette (linux/palette.ts, every colour solved for contrast over it,
+# for Claude Code's ANSI themes). AW_PALETTE=base keeps the tab's own colours instead.
 set -euo pipefail
 
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -129,20 +132,25 @@ PY
     img="$WALLS/$key.webp"
     [ -f "$img" ] || die "$img is not rendered yet"
     base=$(base_scheme)
-    # Konsole keeps a scheme it has loaded by its name for its whole life: a new render gets a new name, so it is read
-    tag=$(printf '%x' "$(stat -c %Y "$img")" | tail -c 5)
+    src=$(scheme_file "$base" || true)
+    colors=""
+    if [ "${AW_PALETTE:-scene}" != base ] && command -v bun >/dev/null; then
+      colors=$(bun "$(dirname "$0")/scheme.ts" "$key" 2>/dev/null) || colors=""
+    fi
+    # Konsole keeps a scheme it has loaded by its name for its whole life: a new render or new colours get a new name,
+    # so it is read
+    tag=$(printf '%s %s %s' "$(stat -c %Y "$img")" "$base" "$colors" | sha1sum | cut -c1-5)
     name="$PREFIX$label ($tag)"
     out="$KDIR/$name.colorscheme"
     mkdir -p "$KDIR"
     for old in "$KDIR/$PREFIX$label"*.colorscheme; do [ -e "$old" ] && [ "$old" != "$out" ] && rm -f "$old"; done
-    src=$(scheme_file "$base" || true)
     # 1:1 and centred when the scene covers the terminal (sharp at any window size); else Konsole's crop-scaling
     fill=Crop
     if dims=$(img_size "$img") && term=$("$0" size 2>/dev/null); then
       [ "${dims%x*}" -ge "${term%x*}" ] && [ "${dims#*x}" -ge "${term#*x}" ] && fill=NoScaling
     fi
     {
-      # the base scheme's [General] minus what the wallpaper sets, then ours, then its colours as they are
+      # the base scheme's [General] minus what the wallpaper sets, then ours, then the scene's palette (or the base's colours)
       printf '[General]\nDescription=%s\n' "$name"
       if [ -n "$src" ]; then
         awk '/^\[General\]/{g=1;next} /^\[/{g=0} g && !/^(Description|Opacity|Blur|Wallpaper|WallpaperOpacity|WallpaperFlipType|FillStyle|Anchor)=/ && NF' "$src"
@@ -150,7 +158,9 @@ PY
       # opaque, no blur behind: a translucent window over a moving wallpaper makes the compositor re-blur it every frame,
       # and washes the scene out
       printf 'Opacity=1\nBlur=false\nWallpaper=%s\nFillStyle=%s\nAnchor=0.5,0.5\nWallpaperOpacity=1\nWallpaperFlipType=NoFlip\n\n' "$img" "$fill"
-      if [ -n "$src" ]; then
+      if [ -n "$colors" ]; then
+        printf '%s\n' "$colors"
+      elif [ -n "$src" ]; then
         awk '/^\[General\]/{g=1;next} /^\[/{g=0} !g' "$src"
       fi
     } > "$out.part"
