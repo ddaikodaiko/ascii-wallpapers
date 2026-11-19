@@ -1,5 +1,13 @@
 {
   "name": "ascii-wallpapers",
-  "owner": { "name": "Handsher" },
-  "plugins": [{ "name": "ascii-wallpapers", "source": "./", "description": "Eight live ASCII wallpapers behind the chat in Claude Desktop" }]
+  "owner": {
+    "name": "ddaikodaiko"
+  },
+  "plugins": [
+    {
+      "name": "ascii-wallpapers",
+      "source": "./",
+      "description": "Eight live ASCII wallpapers behind the chat in Claude Desktop, and behind Konsole on Linux"
+    }
+  ]
 }
