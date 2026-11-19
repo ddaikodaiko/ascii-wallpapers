@@ -48,14 +48,16 @@ terminal session:
 
 1. The scene is rendered once to `~/.local/share/ascii-wallpapers/<scene>.webp` (`linux/render.ts`): headless
    Chromium (on the GPU) draws every frame with the SVG clock paused and seeked, and ImageMagick packs them.
-   - **At the terminal's own pixel size** (read from the pty), so Konsole draws each frame as it is instead of
-     rescaling it on every repaint: sharper, and far less CPU.
+   - **At the screen's size** (from KDE's screen report, else X, else the terminal), and drawn **1:1, centred**
+     (`FillStyle=NoScaling`) whenever it covers the terminal: Konsole's own wallpaper scaling is nearest-neighbour, so a
+     scaled scene pixelates. Unscaled, it is sharp in a Konsole window of any size, and costs less CPU.
+   - Encoded lossy at q92 with sharp RGB→YUV: plain lossy smears the small coloured glyphs and the cell grid.
    - **On the scenes' shimmer clock**: every scene's glyphs flicker through a 0.43 s cycle of three steps. Frames are
      taken mid-step, one per step (7 fps), and a loop is 24 whole cycles (10.3 s), so the flicker is even and closes
      on itself. A 1.5 s crossfade hides the seam of the slower motions.
    - Packed by `img2webp` as full opaque keyframes: ImageMagick's packing leaves alpha deltas, which Konsole decodes
      and blends on every frame.
-   - A dark veil keeps the text readable. Under a minute per scene with a GPU (minutes in software), about 3 MB each.
+   - A dark veil keeps the text readable. Under a minute per scene with a GPU (minutes in software), about 5 MB each.
    The picker says so and turns the wallpaper on by itself when it is ready.
 2. `linux/konsole.sh` copies the tab's own colour scheme (from its profile, so your colours stay) into
    `~/.local/share/konsole/ASCII Wallpaper - <name> (<build>).colorscheme` with the scene as its wallpaper, opaque
@@ -79,7 +81,7 @@ To render all eight ahead of time (from a clone of this repo):
 
 ```bash
 bun linux/render.ts ~/.local/share/ascii-wallpapers            # all eight
-bun linux/render.ts ~/.local/share/ascii-wallpapers honu --width $(bash linux/konsole.sh size | cut -dx -f1) --height $(bash linux/konsole.sh size | cut -dx -f2)
+bun linux/render.ts ~/.local/share/ascii-wallpapers honu --width $(bash linux/konsole.sh screen | cut -dx -f1) --height $(bash linux/konsole.sh screen | cut -dx -f2)
 bun linux/render.ts ~/.local/share/ascii-wallpapers moonlit --steps 2   # 14 fps: smoother, ~1.6x Konsole's CPU
 AW_GPU=0 bun linux/render.ts ~/.local/share/ascii-wallpapers            # software only
 ```

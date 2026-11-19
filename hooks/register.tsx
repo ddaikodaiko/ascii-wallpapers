@@ -65,7 +65,6 @@ function crabSvg(hop: number): string {
 // where the session draws, from session.start: a look draws on desktop and mobile, the terminal needs the helper
 let surface: string | null = null
 const isTerminal = () => surface !== 'desktop' && surface !== 'mobile'
-let konsoleOn = false
 const rendering = new Set<string>()
 
 async function helper($: EngineInterface, args: string[], timeoutMs = 10_000) {
@@ -88,8 +87,8 @@ async function terminalOn($: EngineInterface, w: Wall): Promise<string> {
       void (async () => {
         try {
           const dir = (await helper($, ['dir'])).out
-          // at the terminal's own pixel size, so Konsole draws each frame unscaled
-          const size = (await helper($, ['size'])).out.match(/^(\d+)x(\d+)$/)
+          // at the screen's size: konsole.sh then has Konsole draw it 1:1, sharp in a window of any size
+          const size = (await helper($, ['screen'])).out.match(/^(\d+)x(\d+)$/)
           const dims = size ? ['--width', size[1] ?? '1920', '--height', size[2] ?? '1080'] : []
           const ran = await $.process.run(['bun', `${has.root}/linux/render.ts`, dir, w.key, ...dims], { timeoutMs: 600_000 })
           if (ran.exitCode !== 0) {
@@ -98,7 +97,6 @@ async function terminalOn($: EngineInterface, w: Wall): Promise<string> {
           }
           if ((await read($, current)) === w.key) {
             const on = await helper($, ['on', w.key, w.name])
-            konsoleOn = on.ok
             $.ui.toast(on.ok ? `${w.name} is on.` : `${w.name}: ${on.err}`)
           }
         } catch (err) {
@@ -111,13 +109,12 @@ async function terminalOn($: EngineInterface, w: Wall): Promise<string> {
     return `Rendering ${w.name} for Konsole, once (a few minutes). It goes on by itself when ready.`
   }
   const on = await helper($, ['on', w.key, w.name])
-  konsoleOn = on.ok
   return on.ok ? `${w.name} is on.` : `${w.name} is set, but Konsole refused it: ${on.err}`
 }
 
+// back to the tab's own scheme; keyed on the surface, not on a flag of this module, which a reload resets
 async function terminalOff($: EngineInterface) {
-  if (!konsoleOn) return
-  konsoleOn = false
+  if (!isTerminal()) return
   await helper($, ['off'], 1_000).catch(() => undefined)
 }
 
@@ -187,7 +184,7 @@ export const register: Register = on => {
 
   // the terminal goes back to its own look when the session ends; the pick is kept for the next one
   on('session.end', async ($, e, next) => {
-    await terminalOff($)
+    if (typeof (await $.store.get('wall')) === 'string') await terminalOff($)
     return next(e)
   })
 

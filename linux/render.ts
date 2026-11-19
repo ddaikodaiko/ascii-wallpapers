@@ -4,7 +4,8 @@
 //
 //   bun linux/render.ts <outDir> [scene ...] [--width 1920] [--height 1080] [--steps 2] [--cycles 24] [--fade 1.5] [--workers N]
 //
-// Render at the terminal's own pixel size (konsole.sh size): Konsole then draws each frame as it is, with no scaling.
+// Render at the screen's size (konsole.sh screen): the wallpaper is then drawn 1:1, unscaled and centred, so it is
+// sharp in a Konsole window of any size up to the screen (Konsole's own scaling is nearest-neighbour: it pixelates).
 // Every scene's glyphs shimmer on one clock, a 0.43 s cycle of three steps; frames are sampled mid-step, `steps` per
 // step (1: 7 fps, each step once; 2: 14 fps, smoother motion at about 1.6x Konsole's CPU), and a loop is a whole number
 // of cycles, so the shimmer stays even and closes on itself. The
@@ -197,12 +198,14 @@ try {
     packing.push((async () => {
       const names = Array.from({ length: frames }, (_, i) => join(dir, `f${pad(i)}.png`))
       if (IMG2WEBP) {
-        await run([IMG2WEBP, '-loop', '0', '-kmax', '1', '-lossy', '-q', '85', '-m', '4', '-d', String(Math.round(DT * 1000)), ...names, '-o', tmp])
+        // q92 with sharp RGB->YUV: plain lossy smears the small coloured glyphs and the cell grid (4:2:0 chroma)
+        await run([IMG2WEBP, '-loop', '0', '-kmax', '1', '-lossy', '-q', '92', '-sharp_yuv', '-m', '4', '-d', String(Math.round(DT * 1000)), ...names, '-o', tmp])
       } else {
         // DT as ImageMagick ticks: 0.43 / 3 / STEPS s = 43 / (300 * STEPS) s
-        await run([MAGICK!, '-delay', `43x${300 * STEPS}`, '-loop', '0', ...names, '-alpha', 'off', '-quality', '85', '-define', 'webp:method=4', `webp:${tmp}`])
+        await run([MAGICK!, '-delay', `43x${300 * STEPS}`, '-loop', '0', ...names, '-alpha', 'off', '-quality', '92', '-define', 'webp:method=4', '-define', 'webp:use-sharp-yuv=true', `webp:${tmp}`])
       }
       await rename(tmp, join(OUT, `${key}.webp`))
+      if (process.env.AW_KEEP) await rename(dir, join(OUT, `${key}-frames`)).catch(() => undefined)
       await rm(dir, { recursive: true, force: true })
       console.log(`${process.stdout.isTTY ? '\r' : ''}${key}: ${frames} frames ${W}x${H} in ${((Date.now() - t0) / 1000).toFixed(0)}s -> ${join(OUT, `${key}.webp`)}`)
     })())

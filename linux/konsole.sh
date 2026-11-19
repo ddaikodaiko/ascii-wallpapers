@@ -6,7 +6,8 @@
 #
 #   konsole.sh check            exit 0 when this is a Konsole tab whose terminal can be reached
 #   konsole.sh dir              print the folder the rendered scenes live in
-#   konsole.sh size             print the terminal's size in pixels (WxH), to render at it and spare Konsole a scaling
+#   konsole.sh size             print the terminal's text area in pixels (WxH)
+#   konsole.sh screen           print the size to render at (WxH): the largest screen, in the pixels Konsole draws in
 #   konsole.sh has <key>        exit 0 when <key>.webp is rendered
 #   konsole.sh on <key> <label> show <key> behind the tab
 #   konsole.sh off              back to the tab's own colour scheme
@@ -63,6 +64,19 @@ scheme_file() {
   return 1
 }
 
+# an animated WebP's canvas size, from its VP8X chunk
+img_size() {
+  python3 -I - "$1" <<'PY'
+import struct, sys
+b = open(sys.argv[1], 'rb').read(30)
+if b[:4] != b'RIFF' or b[8:12] != b'WEBP' or b[12:16] != b'VP8X':
+    sys.exit(1)
+w = int.from_bytes(b[24:27], 'little') + 1
+h = int.from_bytes(b[27:30], 'little') + 1
+print(f'{w}x{h}')
+PY
+}
+
 osc50() {
   local tty
   tty=$(find_tty) || die "no terminal to reach"
@@ -79,6 +93,22 @@ case "${1:-}" in
     ;;
   dir)
     echo "$WALLS"
+    ;;
+  screen)
+    # KDE's own report of the screens, in logical pixels (what a Qt widget draws in); else X's; else the terminal + margin
+    if command -v kscreen-doctor >/dev/null && out=$(kscreen-doctor -j 2>/dev/null | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+s = [(round(o["size"]["width"] / (o.get("scale") or 1)), round(o["size"]["height"] / (o.get("scale") or 1))) for o in d.get("outputs", []) if o.get("enabled") and o.get("size")]
+w, h = max(s, key=lambda x: x[0] * x[1])
+print(f"{w}x{h}")' 2>/dev/null) && [ -n "$out" ]; then
+      echo "$out"
+    elif command -v xrandr >/dev/null && out=$(xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p' | head -1) && [ -n "$out" ]; then
+      echo "$out"
+    else
+      s=$("$0" size) || die "no screen size"
+      echo "$(( ${s%x*} + 64 ))x$(( ${s#*x} + 64 ))"
+    fi
     ;;
   size)
     tty=$(find_tty) || die "no terminal to reach"
@@ -106,6 +136,11 @@ PY
     mkdir -p "$KDIR"
     for old in "$KDIR/$PREFIX$label"*.colorscheme; do [ -e "$old" ] && [ "$old" != "$out" ] && rm -f "$old"; done
     src=$(scheme_file "$base" || true)
+    # 1:1 and centred when the scene covers the terminal (sharp at any window size); else Konsole's crop-scaling
+    fill=Crop
+    if dims=$(img_size "$img") && term=$("$0" size 2>/dev/null); then
+      [ "${dims%x*}" -ge "${term%x*}" ] && [ "${dims#*x}" -ge "${term#*x}" ] && fill=NoScaling
+    fi
     {
       # the base scheme's [General] minus what the wallpaper sets, then ours, then its colours as they are
       printf '[General]\nDescription=%s\n' "$name"
@@ -114,7 +149,7 @@ PY
       fi
       # opaque, no blur behind: a translucent window over a moving wallpaper makes the compositor re-blur it every frame,
       # and washes the scene out
-      printf 'Opacity=1\nBlur=false\nWallpaper=%s\nFillStyle=Crop\nAnchor=0.5,0.5\nWallpaperOpacity=1\nWallpaperFlipType=NoFlip\n\n' "$img"
+      printf 'Opacity=1\nBlur=false\nWallpaper=%s\nFillStyle=%s\nAnchor=0.5,0.5\nWallpaperOpacity=1\nWallpaperFlipType=NoFlip\n\n' "$img" "$fill"
       if [ -n "$src" ]; then
         awk '/^\[General\]/{g=1;next} /^\[/{g=0} !g' "$src"
       fi
@@ -129,6 +164,6 @@ PY
     echo "off: $base"
     ;;
   *)
-    die "usage: konsole.sh check | dir | size | has <key> | on <key> <label> | off"
+    die "usage: konsole.sh check | dir | size | screen | has <key> | on <key> <label> | off"
     ;;
 esac
