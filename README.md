@@ -71,8 +71,8 @@ terminal session:
 In the terminal, `/wallpaper` opens a picker above the prompt: press 1–8 in the empty prompt (0 for off), and Clawd
 sits beside it in half blocks, stepping with each pick.
 
-What it costs, measured on Konsole 25.12 with a 1883×1004 terminal: Konsole's own CPU goes from 1% to about 20% of
-one core at 7 fps (33% at 14 fps); the compositor stays at 1%.
+What it costs, measured on Konsole 25.12 (1920×1080 screen, 1883×1004 terminal, idle machine): Konsole's own CPU
+goes from 1% to about 10% of one core at 7 fps; the compositor stays at 1%. 14 fps (`--steps 2`) costs about 1.6x.
 
 Needs: Konsole ≥ 23.08, [Bun](https://bun.sh), Chromium or Chrome (`AW_CHROME=/path` to choose one), ImageMagick and
 libwebp's `img2webp` (optional, recommended). On Fedora: `sudo dnf install chromium ImageMagick libwebp-tools`.

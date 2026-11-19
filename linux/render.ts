@@ -18,7 +18,7 @@ import { SCENES } from '../hooks/scenes.js'
 
 type Key = keyof typeof SCENES
 const DARK_VEIL = 0.42 // the film's dark glass is 55% over panels; the terminal's text sits on the scene itself, so a lighter veil
-const LIGHT_VEIL = 0.55 // Cloud Drift is a light scene: a stronger veil keeps a dark terminal theme readable over it
+const LIGHT_VEIL = 0.7 // Cloud Drift is a light scene: a stronger veil keeps a dark terminal theme readable over it
 
 const args = process.argv.slice(2)
 const opt = (name: string, dflt: number) => {
