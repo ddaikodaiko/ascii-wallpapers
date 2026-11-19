@@ -113,6 +113,16 @@ await mkdir(OUT, { recursive: true })
 // each frame costs seconds of software raster (glyph-pattern masks, morphology filters), so frames are shared out over
 // several headless browsers
 const browsers = await Promise.all(Array.from({ length: WORKERS }, (_, i) => launch(join(work, `profile-${i}`))))
+// killed (the plugin's timeout, ctrl+c): take the browsers and the frames down too
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  process.on(sig, async () => {
+    for (const b of browsers) b.proc.kill()
+    // a closing browser still writes its profile: remove the folder once they are gone
+    await Promise.race([Promise.all(browsers.map(b => b.proc.exited)), Bun.sleep(3000)])
+    await rm(work, { recursive: true, force: true }).catch(() => undefined)
+    process.exit(130)
+  })
+}
 const pad = (i: number) => String(i).padStart(4, '0')
 
 async function load(cdp: Cdp, file: string) {
@@ -176,5 +186,6 @@ try {
   }
 } finally {
   for (const b of browsers) { b.cdp.close(); b.proc.kill() }
+  await Promise.race([Promise.all(browsers.map(b => b.proc.exited)), Bun.sleep(3000)])
   await rm(work, { recursive: true, force: true })
 }
