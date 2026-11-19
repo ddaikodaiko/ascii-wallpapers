@@ -1,6 +1,6 @@
 {
   "name": "ascii-wallpapers",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Eight live ASCII wallpapers behind the chat in Claude Desktop, and behind the terminal in Konsole on Linux, with a picker and Clawd the crab",
   "author": {
     "name": "Handsher",
